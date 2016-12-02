@@ -162,7 +162,7 @@ int f_ifun = [
 # Is instruction valid?
 bool instr_valid = f_icode in 
 	{ INOP, IHALT, IRRMOVL, IIRMOVL, IRMMOVL, IMRMOVL,
-	  IOPL, IJXX, ICALL, IRET, IPUSHL, IPOPL };
+	  IOPL, IJXX, ICALL, IRET, IPUSHL, IPOPL, ILEAVE, IIADDL, IISUBL };
 
 # Determine status code for fetched instruction
 int f_stat = [
@@ -175,11 +175,11 @@ int f_stat = [
 # Does fetched instruction require a regid byte?
 bool need_regids =
 	f_icode in { IRRMOVL, IOPL, IPUSHL, IPOPL, 
-		     IIRMOVL, IRMMOVL, IMRMOVL };
+		     IIRMOVL, IRMMOVL, IMRMOVL, IIADDL, IISUBL };
 
 # Does fetched instruction require a constant word?
 bool need_valC =
-	f_icode in { IIRMOVL, IRMMOVL, IMRMOVL, IJXX, ICALL };
+	f_icode in { IIRMOVL, IRMMOVL, IMRMOVL, IJXX, ICALL, IIADDL, IISUBL };
 
 # Predict next value of PC
 int f_predPC = [
@@ -193,27 +193,31 @@ int f_predPC = [
 ## What register should be used as the A source?
 int d_srcA = [
 	D_icode in { IRRMOVL, IRMMOVL, IOPL, IPUSHL  } : D_rA;
+	D_icode in { ILEAVE } :REBP;
 	D_icode in { IPOPL, IRET } : RESP;
 	1 : RNONE; # Don't need register
 ];
 
 ## What register should be used as the B source?
 int d_srcB = [
-	D_icode in { IOPL, IRMMOVL, IMRMOVL } : D_rB;
+	D_icode in { IOPL, IRMMOVL, IMRMOVL, IIADDL, IISUBL } : D_rB;
 	D_icode in { IPUSHL, IPOPL, ICALL, IRET } : RESP;
+	D_icode in { ILEAVE } :REBP;
 	1 : RNONE;  # Don't need register
 ];
 
 ## What register should be used as the E destination?
 int d_dstE = [
-	D_icode in { IRRMOVL, IIRMOVL, IOPL } : D_rB;
+	D_icode in { IRRMOVL, IIRMOVL, IOPL, IIADDL, IISUBL } : D_rB;
 	D_icode in { IPUSHL, IPOPL, ICALL, IRET } : RESP;
+	D_icode in { ILEAVE } :RESP;
 	1 : RNONE;  # Don't write any register
 ];
 
 ## What register should be used as the M destination?
 int d_dstM = [
 	D_icode in { IMRMOVL, IPOPL } : D_rA;
+	D_icode in { ILEAVE } :REBP;
 	1 : RNONE;  # Don't write any register
 ];
 
@@ -243,16 +247,18 @@ int d_valB = [
 ## Select input A to ALU
 int aluA = [
 	E_icode in { IRRMOVL, IOPL } : E_valA;
-	E_icode in { IIRMOVL, IRMMOVL, IMRMOVL } : E_valC;
+	E_icode in { IIRMOVL, IRMMOVL, IMRMOVL, IIADDL, IISUBL } : E_valC;
 	E_icode in { ICALL, IPUSHL } : -4;
 	E_icode in { IRET, IPOPL } : 4;
+	E_icode in { ILEAVE } : 4;
 	# Other instructions don't need ALU
 ];
 
 ## Select input B to ALU
 int aluB = [
 	E_icode in { IRMMOVL, IMRMOVL, IOPL, ICALL, 
-		     IPUSHL, IRET, IPOPL } : E_valB;
+		     IPUSHL, IRET, IPOPL, IIADDL, IISUBL } : E_valB;
+	E_icode in { ILEAVE } : E_valB;
 	E_icode in { IRRMOVL, IIRMOVL } : 0;
 	# Other instructions don't need ALU
 ];
@@ -260,11 +266,12 @@ int aluB = [
 ## Set the ALU function
 int alufun = [
 	E_icode == IOPL : E_ifun;
+	E_icode == IISUBL : ALUSUB;
 	1 : ALUADD;
 ];
 
 ## Should the condition codes be updated?
-bool set_cc = E_icode in { IOPL } &&
+bool set_cc = E_icode in { IOPL, IIADDL, IISUBL } &&
 	# State changes only during normal operation
 	!m_stat in { SADR, SINS, SHLT } && !W_stat in { SADR, SINS, SHLT };
 
@@ -283,11 +290,12 @@ int e_dstE = [
 int mem_addr = [
 	M_icode in { IRMMOVL, IPUSHL, ICALL, IMRMOVL } : M_valE;
 	M_icode in { IPOPL, IRET } : M_valA;
+	M_icode in { ILEAVE } : M_valA;
 	# Other instructions don't need address
 ];
 
 ## Set read control signal
-bool mem_read = M_icode in { IMRMOVL, IPOPL, IRET };
+bool mem_read = M_icode in { IMRMOVL, IPOPL, IRET, ILEAVE };
 
 ## Set write control signal
 bool mem_write = M_icode in { IRMMOVL, IPUSHL, ICALL };
